@@ -1,0 +1,74 @@
+services:
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.27.6
+    environment:
+      QUERY_DEFAULTS_LIMIT: "25"
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      CLUSTER_HOSTNAME: synthetic-node
+    volumes:
+      - synthetic_weaviate_data:/var/lib/weaviate
+    networks: [synthetic-net]
+
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    ports:
+      - "127.0.0.1:16006:6006"
+    networks: [synthetic-net]
+
+  agent-service:
+    build:
+      context: .
+      dockerfile: agent-service/Dockerfile
+    environment:
+      PYTHONPATH: /app
+      WEAVIATE_URL: http://weaviate:8080
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      OLLAMA_EMBEDDING_MODEL: nomic-embed-text
+      OLLAMA_CHAT_MODEL: qwen3:8b
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://phoenix:6006/v1/traces
+      OTEL_BSP_SCHEDULE_DELAY: "200"
+    depends_on:
+      weaviate:
+        condition: service_started
+      phoenix:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [synthetic-net]
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    environment:
+      APP_ENV: development
+      AGENT_SERVICE_URL: http://agent-service:8001
+      GOOGLE_OAUTH_CLIENT_SECRETS_FILE: /tmp/no-oauth-client.json
+      GOOGLE_TOKEN_FILE: /tmp/no-oauth-token.json
+      GMAIL_REDIRECT_URI: http://localhost:18000/gmail/oauth/callback
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://phoenix:6006/v1/traces
+      OTEL_BSP_SCHEDULE_DELAY: "200"
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      agent-service:
+        condition: service_healthy
+      phoenix:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    networks: [synthetic-net]
+
+networks:
+  synthetic-net:
+    driver: bridge
+
+volumes:
+  synthetic_weaviate_data:

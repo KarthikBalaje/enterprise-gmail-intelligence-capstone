@@ -1,412 +1,294 @@
-﻿# Solution Design Document (SDD)
+# Solution Design Document
 
 ## Enterprise Gmail Intelligence & Safe Inbox Cleaner
 
-**Project:** Week 4 — Enterprise Boardroom Capstone  
-**Status:** Prototype / Partial Implementation  
-**Architecture style:** Containerized services with API gateway and agent-based planning
+**Capstone problem:** enterprise AI pilots fail review when teams submit demos instead of deployment-ready systems.
+**Assessment target:** five-layer production-style system plus CISO-ready SDD, C4 diagrams, threat model, rollout plan, and evidence.
 
 ---
 
 ## 1. Executive Summary
 
-The Enterprise Gmail Intelligence & Safe Inbox Cleaner is a prototype for reviewing Gmail inbox metadata and producing conservative cleanup recommendations.
+Enterprise Gmail Intelligence & Safe Inbox Cleaner is a read-only Gmail intelligence system that connects four weekly artifacts into one deployable narrative:
 
-The application uses a React frontend, FastAPI API gateway, Python agent service, and deterministic guardrail policies. Gmail access uses OAuth with the read-only `gmail.readonly` scope. The current workflow retrieves message metadata and produces a dry-run plan without modifying email.
+- CI/CD and repository hygiene.
+- Multi-agent cleanup planning with deterministic guardrails.
+- RAG over indexed email content.
+- Capstone deployment evidence through Docker Compose, C4 diagrams, telemetry, and security documentation.
 
-Uncertain classifications default to `keep` and require manual review. Destructive Gmail operations are not implemented or enabled.
+The application uses a React frontend, FastAPI API gateway, Python agent service, deterministic policy engine, Weaviate vector database, local Ollama models, and Arize Phoenix telemetry. Gmail access uses the least-privilege `gmail.readonly` OAuth scope. Cleanup planning is dry-run only and does not modify Gmail.
 
-The intended broader solution includes email ingestion, Weaviate retrieval, grounded retrieval-augmented generation (RAG), persistent human-in-the-loop (HITL) approvals, and distributed observability. These components are not all implemented and must not be treated as production-ready.
-
-### Current verified capabilities
-
-- Read-only Gmail OAuth integration.
-- Inbox metadata retrieval without fetching message bodies in the cleanup-plan endpoint.
-- API gateway to agent-service planning workflow.
-- Deterministic safety policy and unit tests.
-- React review interface.
-- Docker Compose deployment of the frontend, gateway, agent service, Weaviate, and Phoenix.
-
-### Known limitations
-
-- RAG ingestion, indexing, retrieval, and grounded answer generation are incomplete.
-- Persistent HITL approvals are not implemented.
-- Gmail write operations are disabled.
-- The full service-level end-to-end test harness is missing.
-- End-to-end Phoenix trace propagation has not been verified.
+Gmail write operations, automated deletion, persistent approvals, and production audit persistence are intentionally out of scope for the current capstone build.
 
 ---
 
-## 2. Scope and Requirements
+## 2. Assessment Traceability
 
-### 2.1 Functional requirements
+| Assessment category | Weight | Repository evidence |
+|---|---:|---|
+| Multi-container orchestration | 25 | `docker-compose.yml` orchestrates frontend, FastAPI gateway, agent service, Weaviate, and Phoenix |
+| End-to-end flow verification | 25 | `evidence/verification-report.md` records the isolated synthetic request, RAG result, and Phoenix trace correlation |
+| SDD - C4 diagrams | 15 | Mermaid C4-style diagrams in `diagrams/context.mmd`, `diagrams/container.mmd`, and `diagrams/component.mmd` |
+| SDD - threat model | 15 | `sdd/threat-model.md` maps controls to supply-chain, rogue-agent, and injection/outage incidents |
+| SDD - rollout plan | 10 | `sdd/rollout-rollback.md` defines staged rollout, gates, and rollback triggers |
+| Overall coherence | 10 | README and this SDD connect CI/CD, multi-agent logic, RAG, and capstone deployment |
 
-| ID | Requirement | Current status |
+### Weekly artifact lineage
+
+| Prior artifact | Reference repository and demonstrated pattern | Capstone carry-forward and current gap |
 |---|---|---|
-| FR-01 | Connect to Gmail using OAuth | Implemented and verified |
-| FR-02 | Retrieve inbox metadata with read-only access | Implemented and verified |
-| FR-03 | Generate a cleanup review plan through the agent service | Implemented and verified |
-| FR-04 | Default uncertain classifications to keeping messages | Implemented and unit-tested |
-| FR-05 | Protect sent, draft, work-related, and personally protected messages from destructive actions | Policy requirements implemented in guardrails; full action execution disabled |
-| FR-06 | Present cleanup candidates in a frontend | Implemented |
-| FR-07 | Ingest emails and index them in Weaviate | Not implemented |
-| FR-08 | Retrieve relevant emails for a question | Not implemented |
-| FR-09 | Generate grounded answers with source citations | Not implemented |
-| FR-10 | Persist human approval decisions | Not implemented |
-| FR-11 | Execute Gmail modifications after approval | Not implemented |
-| FR-12 | Export and verify distributed traces in Phoenix | Not fully verified |
+| Case Study 1 — Zero-Trust CI/CD | [ai-model-explorer](https://github.com/KarthikBalaje/ai-model-explorer): Jenkins stages for tests, Docker build, Trivy image scanning, and image publishing. | `.github/workflows/ci.yml` runs tests and frontend build; Docker Compose builds local services. Container scanning, provenance, and image publishing are not yet implemented here. |
+| Case Study 2 — Guardrailed multi-agent system | [fintech-market-intelligence-agent](https://github.com/KarthikBalaje/fintech-market-intelligence-agent): Researcher → Analyst → Reviewer workflow, execution-budget guardrail, and reviewer decision gate. | The Gmail planner uses deterministic classification/planning/review and a fail-closed policy; it does not run an autonomous loop, and cleanup actions remain disabled. |
+| Case Study 3 — Monitored RAG | [knowledge-base-monitored-rag](https://github.com/KarthikBalaje/knowledge-base-monitored-rag): Weaviate retrieval, input sanitization, Phoenix traces, and retrieval-quality evaluation. | The capstone uses Weaviate/Ollama, untrusted-email handling, citation checks, and Phoenix instrumentation. Hybrid retrieval/evaluation and a portfolio-ready Phoenix screenshot remain gaps. |
 
-### 2.2 Non-functional requirements
-
-- **Security:** use least-privilege OAuth scopes and keep credentials outside the repository.
-- **Safety:** never modify Gmail during the current prototype workflow.
-- **Privacy:** avoid retrieving email bodies unless a separately authorized feature requires them.
-- **Reliability:** expose health/readiness checks and use deterministic policy decisions.
-- **Maintainability:** separate gateway, agent logic, guardrails, frontend, and retrieval responsibilities.
-- **Testability:** keep policy logic testable independently and document skipped integration tests.
-- **Observability:** provide service logs and health checks; distributed trace verification remains outstanding.
-
-### 2.3 Assumptions and exclusions
-
-- Gmail access is explicitly authorized by the account owner.
-- Local development uses Docker Compose.
-- The current workflow is a read-only review prototype.
-- Production email modification, automatic deletion, and unattended cleanup are outside the implemented scope.
-- The design does not claim that RAG or production-grade observability is complete.
+The ADaSci template file was not present among the tracked repository files when this SDD was reviewed; this document follows the supplied assessment criteria and should be transferred into the official template if one is provided.
 
 ---
 
 ## 3. Five Production Layers
 
-### Layer 1: Presentation and API Gateway
+### Layer 1: DevOps and Runtime Orchestration
 
 **Components**
+
+- Master `docker-compose.yml`
+- Service Dockerfiles
+- GitHub Actions workflow
+- Evidence directories
+
+**Responsibilities**
+
+- Run local microservices together.
+- Keep external ports bound to localhost.
+- Preserve repeatable test/build commands.
+- Keep secrets and tokens outside Git.
+
+**Current evidence**
+
+- `docker compose config` renders successfully.
+- Compose includes frontend, API gateway, agent service, Weaviate, and Phoenix.
+- `.env`, token, credential, build, and cache files are ignored.
+
+### Layer 2: API Gateway and Presentation
+
+**Components**
+
 - React frontend
 - FastAPI API gateway
+- Nginx frontend proxy
 
 **Responsibilities**
-- Display cleanup candidates and policy outcomes.
-- Accept cleanup-planning requests.
-- Retrieve Gmail metadata through the OAuth integration.
-- Forward candidate data to the agent service.
-- Expose health/readiness and API documentation endpoints.
 
-**Verification**
-- Frontend: `http://localhost:5173`
-- API docs: `http://localhost:8000/docs`
-- Readiness: `http://localhost:8000/ready`
+- Provide the user-facing cleanup and RAG interface.
+- Validate request shape and size.
+- Forward cleanup planning and RAG requests to the agent service.
+- Optionally fetch up to three Gmail metadata records using the read-only OAuth scope; body indexing is a separate explicit option.
+- Terminate local browser requests through a single frontend origin.
 
-### Layer 2: Security and Guardrails
+**Key endpoints**
+
+- `POST /cleanup/plan`
+- `POST /cleanup/assist` (single-client-request cleanup plan plus RAG lookup)
+- `POST /cleanup/plan/gmail`
+- `POST /rag/index`
+- `POST /rag/ask`
+- `POST /gmail/rag/index`
+- `GET /ready`
+
+The current local verification results and the safe synthetic live-check procedure are recorded in `evidence/verification-report.md`. Live request/trace evidence remains outstanding.
+
+### Layer 3: Guardrails and Agentic Logic
 
 **Components**
-- Deterministic policy engine
-- Cleanup planning/review policy
-- Gmail read-only OAuth integration
+
+- Agent service
+- Cleanup planner
+- Reviewer
+- Deterministic guardrail policy
 
 **Responsibilities**
-- Enforce conservative decisions.
-- Default uncertain candidates to `keep`.
-- Prevent destructive actions against protected categories.
-- Keep Gmail write operations disabled.
-- Treat email content as untrusted input.
 
-**Verification**
-- Run `pytest -q -rs`.
-- Review `guardrails/` and the security tests under `tests/`.
+- Build a cleanup review plan.
+- Fail closed for protected or uncertain messages.
+- Ensure planning is never authorization.
+- Return `actions_executed: 0` for the current system.
 
-### Layer 3: Agentic Intelligence
+**Implemented safety controls**
 
-**Component**
-- Python agent service
+- Sent and draft messages are protected from cleanup modification.
+- Work-related and personally protected messages cannot be trashed.
+- Uncertain messages are kept for manual review.
+- Trash requires explicit human approval in policy, but no write executor is enabled.
 
-**Responsibilities**
-- Receive cleanup-plan requests.
-- Process candidate metadata.
-- Apply the planning and review policy.
-- Return candidate decisions and review statuses.
-
-The current implementation is a deterministic planning workflow. It should not be described as a fully autonomous multi-agent system or as an LLM-based classifier unless those features are implemented and verified.
-
-### Layer 4: Email Knowledge and Retrieval
-
-**Planned components**
-- Email ingestion and normalization
-- Embedding generation
-- Weaviate indexing and retrieval
-- Grounded answer generation
-- Source citations
-
-Weaviate is available in Docker Compose, but the complete email RAG workflow is not implemented. No claim of successful retrieval, grounded answers, or source citations should be made yet.
-
-**Completion criteria**
-1. Authorized documents can be ingested safely.
-2. Email records are indexed in Weaviate.
-3. Queries retrieve relevant records.
-4. Answers cite retrieved sources.
-5. Tests verify that answers are grounded and insufficient evidence is handled safely.
-
-### Layer 5: DevOps and Observability
+### Layer 4: Vector RAG
 
 **Components**
-- Docker Compose
-- Health/readiness endpoints
-- Phoenix service
-- Evidence and test-report directories
 
-The frontend, API gateway, agent service, Weaviate, and Phoenix are included in the local Compose deployment.
+- RAG ingestion and chunking.
+- Ollama embedding endpoint.
+- Weaviate vector database.
+- Retrieval and grounded answer generation.
+- Citation validation.
 
-End-to-end trace propagation and Phoenix trace export remain unverified. Production alerting, retention controls, and CI/CD hardening are not yet complete.
+**Responsibilities**
+
+- Normalize explicitly supplied or read-only Gmail-indexed records.
+- Skip metadata-only records.
+- Index chunks in Weaviate with caller-provided vectors.
+- Retrieve relevant chunks by vector similarity.
+- Generate answers using retrieved evidence only.
+- Reject answers that do not cite valid provided source IDs.
+- Return an insufficient-evidence response when no evidence exists.
+
+**Current evidence**
+
+- Automated tests cover chunk preparation, metadata-only skip, citation validation, and insufficient-evidence fallback.
+- Live RAG evidence must be captured with sanitized input/output before final submission.
+
+### Layer 5: Telemetry and Evidence
+
+**Components**
+
+- OpenTelemetry instrumentation in gateway and agent service.
+- Phoenix dashboard.
+- Evidence folders for logs, screenshots, and traces.
+
+**Responsibilities**
+
+- Show a request path through gateway and agent service.
+- Support trace inspection in Phoenix.
+- Preserve sanitized proof of service status, API readiness, tests, and UI.
+
+**Current status**
+
+- Instrumentation and Phoenix service are present.
+- The isolated synthetic flow exported spans to Phoenix and the shared trace ID was verified; a sanitized Phoenix UI screenshot/export artifact is still outstanding.
 
 ---
 
-## 4. C4 Architecture
+## 4. End-to-End Flow
 
-The project includes the following Mermaid diagrams:
-
-- Context: `../diagrams/context.mmd`
-- Container: `../diagrams/container.mmd`
-- Component: `../diagrams/component.mmd`
-
-The diagrams should distinguish implemented components from planned components. In particular, the presence of Weaviate and Phoenix containers does not establish that email retrieval or distributed tracing is operational.
-
-### Logical request flow
+The composite `POST /cleanup/assist` request is designed to traverse (Gmail metadata/body indexing are opt-in and bounded to at most three Inbox messages):
 
 ```text
-User
- |
- v
-React Frontend
- |
- v
-FastAPI API Gateway
- |                 \
- |                  \--> Gmail API
- |                       (read-only metadata)
- v
-Agent Service
- |
- v
-Guardrails / Review Policy
- |
- v
-Cleanup Plan Response
- |
- v
-React Review Interface
+Client
+  -> FastAPI gateway (/cleanup/assist)
+  -> Gmail API (gmail.readonly; optional metadata and local indexing)
+  -> Agent service /plan
+  -> Planner and deterministic guardrails
+  -> Agent service /rag/ask
+  -> Ollama embedding request and Weaviate retrieval
+  -> Ollama answer request (only when evidence exists)
+  -> OpenTelemetry gateway/agent HTTP spans
+  -> Phoenix dashboard
 ```
 
-The planned RAG flow adds ingestion, indexing, retrieval, and grounded answer generation. That path is not yet complete.
+The composite endpoint makes two internal agent-service requests under one external client request. The plan remains dry-run only (`actions_executed: 0`); the related-context question defaults to the cleanup request unless a separate question is supplied. The agent service instruments its outgoing HTTP calls so vector-store and local model spans can join the request trace.
+
+### Verification checklist
+
+1. `docker compose config`
+2. `docker compose up --build -d`
+3. `docker compose ps`
+4. `Invoke-RestMethod http://localhost:8000/ready`
+5. `pytest -q -rs`
+6. In an isolated test vector store containing synthetic records only, index synthetic data through `/rag/index`.
+7. Send one synthetic request to `/cleanup/assist` and verify the dry-run plan plus RAG fallback/answer. Do not run this against a vector store that may contain private email unless you intend to review the resulting answer.
+8. Capture a sanitized Phoenix UI screenshot/export showing the verified gateway, agent, vector-store, and Ollama HTTP spans.
 
 ---
 
-## 5. Data Flow and Trust Boundaries
+## 5. C4 Architecture
 
-### 5.1 Current cleanup-planning flow
+The C4 diagrams are maintained as Mermaid files:
 
-1. The user authorizes Gmail access using OAuth.
-2. The gateway retrieves inbox metadata using the read-only Gmail scope.
-3. The gateway constructs candidate records without fetching message bodies.
-4. The candidate records are sent to the agent service.
-5. The planner and guardrails produce conservative decisions.
-6. The API returns the plan and review statuses to the frontend.
-7. No Gmail modification is executed.
+- `../diagrams/context.mmd`
+- `../diagrams/container.mmd`
+- `../diagrams/component.mmd`
 
-### 5.2 Trust boundaries
+They document:
 
-| Boundary | Data crossing the boundary | Required controls |
-|---|---|---|
-| Browser to gateway | User requests and plan responses | Local binding, request validation |
-| Gateway to Gmail API | OAuth token and metadata requests | Read-only scope, protected token storage |
-| Gateway to agent service | Candidate metadata and planning request | Schema validation, bounded input |
-| Agent service to policy layer | Candidate attributes and proposed decisions | Deterministic policy, safe defaults |
-| Application to Weaviate | Future indexed email records and queries | Authorization, access filtering, retention controls |
-| Application to Phoenix | Operational telemetry | Redaction and sensitive-data filtering |
-
-### 5.3 Future approval and write boundary
-
-Any future Gmail write workflow must be isolated from the current read-only path. It must require explicit human approval, enforce policy again at execution time, and generate an auditable decision record. No such executor is currently enabled.
+- Users and external systems.
+- Containers in the local deployment.
+- Implemented request components for cleanup and RAG.
+- Future write execution as out of scope.
 
 ---
 
-## 6. Security and Privacy
+## 6. Data and Trust Boundaries
 
-### 6.1 OAuth and credentials
-
-- Use `https://www.googleapis.com/auth/gmail.readonly`.
-- Store OAuth client configuration and token files outside the repository.
-- Exclude `.env`, credentials, and tokens from Git.
-- Never log access tokens or OAuth secrets.
-- Do not request Gmail modification scopes for the current prototype.
-
-### 6.2 Email protection
-
-- Sent messages and drafts must be protected.
-- Work-related and personally protected messages must be excluded from destructive actions.
-- Uncertain classifications must default to `keep` and manual review.
-- Do not fetch email bodies in the current cleanup-plan workflow.
-
-### 6.3 Prompt injection
-
-If RAG or LLM processing is introduced, email content must be treated as untrusted data, not as instructions that override system policy. Retrieved content must not authorize tool use or bypass approval controls.
-
-### 6.4 Logging and retention
-
-- Keep test evidence sanitized.
-- Do not store unnecessary personal email content in logs or traces.
-- Define explicit retention and deletion policies before introducing persistent email indexing.
-- Configure access controls and encryption appropriate to the deployment before production use.
-
-Encryption, formal retention enforcement, and production access-control hardening require additional verification.
+| Boundary | Data crossing | Primary risks | Controls |
+|---|---|---|---|
+| Browser to gateway | User prompts, cleanup requests, RAG questions | Malformed input, unauthorized local access | Pydantic validation, localhost binding |
+| Gateway to Gmail | OAuth token, metadata/body reads | Token exposure, excessive scope | `gmail.readonly`, external token path |
+| Gateway to agent | Candidate metadata, RAG payloads | Policy bypass, oversized payloads | Request schemas and size limits |
+| Agent to guardrails | Candidate facts and proposed action | Unsafe autonomous action | Deterministic policy outside LLM |
+| Agent to Weaviate | Email chunks and vectors | Sensitive indexed data exposure | Local deployment, minimal metadata, evidence sanitation |
+| Agent to Ollama | Retrieved snippets and question | Prompt injection, hallucination | Untrusted-content prompt, citation validation |
+| Services to Phoenix | Traces and attributes | Sensitive telemetry leakage | Sanitized evidence and no token logging |
 
 ---
 
-## 7. Observability and Operations
+## 7. Security and Privacy Controls
 
-### 7.1 Health and readiness
-
-Use the API readiness endpoint:
-
-```powershell
-Invoke-RestMethod http://localhost:8000/ready
-```
-
-Inspect service status:
-
-```powershell
-docker compose ps
-```
-
-Inspect service logs when troubleshooting:
-
-```powershell
-docker compose logs --tail=100
-```
-
-### 7.2 Phoenix
-
-Phoenix is available at `http://localhost:6006`.
-
-The presence of the Phoenix container does not prove that traces propagate across the gateway and agent service. Trace export, correlation, redaction, and end-to-end visualization must be verified before observability is marked complete.
-
-### 7.3 Error handling and runbooks
-
-Operational follow-up work includes:
-- OAuth expiration and reauthorization handling.
-- Gmail API rate limits and transient failures.
-- Agent-service timeout and unavailable-service handling.
-- Weaviate ingestion and retrieval failures.
-- Trace export failures.
-- Sanitized diagnostic collection and recovery procedures.
-
-Production alerting and operational service-level objectives are not yet defined.
+- Gmail OAuth is read-only.
+- Gmail write actions are not implemented.
+- Cleanup planning does not fetch email bodies.
+- RAG indexing is explicit and bounded.
+- Attachments are not indexed.
+- Retrieved email content is labeled untrusted in the answer prompt.
+- Answers without valid source citations are rejected.
+- `.env`, credentials, token files, traces, screenshots, and logs are excluded by default unless deliberately sanitized.
 
 ---
 
 ## 8. Testing and Evidence
 
-### 8.1 Latest recorded tests
+Latest verified local result:
 
 ```text
-12 passed, 3 skipped
+18 passed
 ```
 
-The skipped tests are:
+Test coverage includes:
 
-- `tests/e2e/test_cleanup_workflow.py`: full service test harness is missing.
-- `tests/integration/test_rag_flow.py`: RAG integration is not implemented.
-- `tests/security/test_protected_email_actions.py`: the real action executor is intentionally disabled.
+- Guardrail policy behavior.
+- Dry-run cleanup workflow.
+- Protected-message bulk policy behavior.
+- RAG chunk normalization.
+- Insufficient-evidence fallback.
+- Citation validation.
 
-### 8.2 Reproduce the test run
+Evidence locations:
 
-```powershell
-pytest -q -rs
-```
+- `evidence/logs/pytest-results.txt`
+- `evidence/logs/runtime-validation.txt`
+- `evidence/screenshots/gmail-cleanup-planner.png`
+- `evidence/traces/`
 
-### 8.3 Recorded evidence
+Required final evidence still to capture:
 
-- Test report: `../evidence/logs/pytest-results.txt`
-- Cleanup planner screenshot: `../evidence/screenshots/gmail-cleanup-planner.png`
-
-### 8.4 Additional evidence required
-
-- Sanitized `docker compose ps` output.
-- Sanitized service logs.
-- A documented request/response demonstrating gateway-to-agent processing.
-- Verified Phoenix trace evidence after trace propagation is implemented.
-- RAG retrieval and citation evidence after the RAG pipeline is implemented.
-- Automated service-level end-to-end test results.
-
-Do not include personal email subjects, message bodies, OAuth tokens, or other secrets in submitted evidence.
+- Sanitized synthetic RAG live request/response summary and trace correlation: `evidence/verification-report.md`.
+- Phoenix UI screenshot/export showing gateway, agent, vector-store, and Ollama spans (still outstanding).
 
 ---
 
-## 9. Threat Model
+## 9. Rollout Summary
 
-See `threat-model.md`.
+The rollout plan is staged:
 
-The threat model should cover, at minimum:
+1. Local mock mode.
+2. Read-only Gmail pilot.
+3. Local RAG validation with sanitized data.
+4. Observability evidence gate.
+5. Future human-approved writes, only after new scopes, approval binding, audit persistence, and adversarial tests.
 
-- Unauthorized access and OAuth token exposure.
-- Destructive action against protected or misclassified email.
-- Prompt injection through email content.
-- Sensitive data leakage through logs, traces, or indexed content.
-- Unauthorized execution without human approval.
-
-The course requires explicit mapping of three prior weekly incidents. Their exact descriptions are not included in this document, so those mappings must be completed using the official course materials rather than invented.
+Rollback is documented in `rollout-rollback.md`. Any suspected unauthorized Gmail action or credential exposure triggers immediate disablement and credential containment.
 
 ---
 
-## 10. Rollout and Rollback
+## 10. Final Position
 
-See `rollout-rollback.md`.
+This repository is no longer a notebook demo. It is a local enterprise-style system with container orchestration, service boundaries, guardrails, RAG, telemetry instrumentation, architecture diagrams, and security documentation.
 
-### Current rollout stage
-
-The current stage is a local, read-only prototype. Gmail write operations are disabled.
-
-### Minimum rollout gates
-
-1. Unit and policy tests pass.
-2. OAuth scope and secret handling are verified.
-3. No destructive action is reachable through the read-only workflow.
-4. The end-to-end service test harness passes.
-5. RAG ingestion, retrieval, and grounding tests pass before RAG is advertised as operational.
-6. Phoenix trace propagation is demonstrated before observability is marked complete.
-7. Security review and human-approval controls pass before any future write executor is enabled.
-
-### Rollback
-
-For local failures, stop the Compose stack and return to the last verified code/configuration state. Preserve sanitized diagnostic evidence and keep Gmail write operations disabled.
-
-Specific measurable recovery-time objectives, recovery-point objectives, and production rollback procedures remain to be defined.
-
----
-
-## 11. Assessment Traceability
-
-| Assessment area | Artifact | Verification |
-|---|---|---|
-| API gateway and service orchestration | `docker-compose.yml`, `api-gateway/`, `agent-service/` | `docker compose ps`; `Invoke-RestMethod http://localhost:8000/ready` |
-| Gmail integration | `api-gateway/app/gmail_oauth.py` | Read-only status and metadata dry-run |
-| Guardrails | `guardrails/`, `tests/` | `pytest -q -rs` |
-| Frontend | `frontend/` | Open `http://localhost:5173` |
-| C4 architecture | `diagrams/` | Review the three `.mmd` files |
-| Security and privacy | `threat-model.md` | Review scope, token handling, protected-email rules |
-| Rollout and rollback | `rollout-rollback.md` | Review documented gates and recovery procedures |
-| Test evidence | `../evidence/logs/pytest-results.txt` | Inspect the saved report |
-| UI evidence | `../evidence/screenshots/gmail-cleanup-planner.png` | Inspect the screenshot |
-| RAG integration | `rag-service/` | Incomplete; integration test is skipped |
-| End-to-end workflow | `tests/e2e/` | Incomplete; service test harness is missing |
-| Distributed tracing | `observability/` | Incomplete; end-to-end trace export is unverified |
-
----
-
-## Final Status
-
-This project demonstrates a working read-only Gmail metadata review workflow, agent-service planning, conservative guardrails, a React review interface, and a containerized local deployment.
-
-It does not yet demonstrate a complete RAG pipeline, persistent HITL approvals, a Gmail write executor, a full automated end-to-end test harness, or verified distributed trace propagation.
-
-These limitations must remain explicit in the capstone submission until the corresponding implementation and evidence are complete.
-
-**Template note:** Adapt this document to the official ADaSci Enterprise SDD template if one is provided by the course.
+The system remains a read-only prototype. Its synthetic end-to-end RAG flow and Phoenix trace correlation have been verified and recorded; a UI screenshot/export and the remaining production-hardening controls are still outstanding.

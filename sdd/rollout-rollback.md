@@ -1,197 +1,172 @@
-﻿# Rollout and Rollback Plan
+# Rollout and Rollback Plan
 
 **Project:** Enterprise Gmail Intelligence & Safe Inbox Cleaner  
-**Status:** Local prototype — read-only Gmail workflow  
-**Deployment:** Docker Compose
-
----
+**Deployment target:** Local Docker Compose capstone environment
+**Safety posture:** Read-only Gmail, no write execution
 
 ## 1. Rollout Strategy
 
-The system will be rolled out in stages. Each stage must meet its acceptance criteria before proceeding to the next. Gmail write operations remain disabled until the security, authorization, and human-approval requirements are implemented and verified.
+The system rolls out in staged gates. Each gate must produce sanitized evidence before the next gate is considered complete.
 
-### Stage 1: Local Mock Mode
+### Stage 1: Local Synthetic Validation
 
-**Objective:** Validate the application using synthetic email candidates without connecting to Gmail.
+**Objective:** Validate the service graph without Gmail credentials.
 
-**Configuration**
-- Run the frontend, API gateway, and agent service locally through Docker Compose.
-- Use synthetic candidate data.
-- Keep Gmail OAuth and write access disabled for this stage.
-- Validate deterministic guardrail behavior.
+**Scope**
 
-**Acceptance criteria**
-- All applicable unit tests pass.
-- Uncertain candidates default to `keep`.
-- Protected-email policy tests pass.
-- No Gmail modification endpoint is enabled.
-
-**Current status:** The existing unit tests pass, but three tests are skipped. This stage should not be considered fully verified until the applicable skipped tests and configuration requirements are addressed.
-
-### Stage 2: Read-Only Gmail Pilot
-
-**Objective:** Validate Gmail metadata retrieval and conservative cleanup planning using an explicitly authorized test account.
-
-**Configuration**
-- Use OAuth with the `gmail.readonly` scope.
-- Keep OAuth credentials and token files outside the repository.
-- Retrieve message metadata only for the current cleanup-planning workflow.
-- Keep Gmail write operations disabled.
-- Route uncertain candidates to manual review.
+- Frontend
+- API gateway
+- Agent service
+- Guardrail policy
+- Synthetic cleanup candidates
+- Synthetic RAG records
 
 **Acceptance criteria**
-- OAuth authorization and metadata retrieval succeed.
-- The granted scope is verified as read-only.
-- A representative dry-run returns valid candidate records.
-- `actions_executed` remains `0`.
-- No email body is fetched by the cleanup-plan endpoint.
-- Uncertain candidates default to `keep`.
-- Personal data and credentials are excluded from submitted logs and screenshots.
 
-**Current status:** The read-only Gmail metadata workflow has been demonstrated with five inbox candidates, zero actions executed, and approval required. RAG retrieval and grounded-answer validation are not complete.
+- `pytest -q -rs` passes.
+- `docker compose config` succeeds.
+- `docker compose ps` shows required services.
+- No Gmail write route exists.
+- Cleanup plans return `actions_executed: 0`.
 
-### Stage 3: Human-Approved Writes
+**Current status:** Implemented and passing locally.
 
-**Objective:** Introduce controlled Gmail modifications only after the required authorization and safety mechanisms have been implemented.
+### Stage 2: Read-Only Gmail Metadata Pilot
+
+**Objective:** Validate OAuth and Gmail metadata cleanup planning.
+
+**Scope**
+
+- Gmail OAuth with `gmail.readonly`.
+- Inbox metadata retrieval.
+- Dry-run cleanup planning.
+
+**Acceptance criteria**
+
+- OAuth token is stored outside the repository.
+- Granted scope is read-only.
+- Cleanup plan uses metadata format and does not fetch bodies.
+- Returned plan requires approval and executes zero actions.
+- Evidence excludes personal subjects, body text, tokens, and credentials.
+
+**Current status:** Implemented; evidence should be refreshed before final submission.
+
+### Stage 3: Local RAG Validation
+
+**Objective:** Verify the vector RAG layer for the capstone end-to-end flow.
+
+**Scope**
+
+- RAG indexing.
+- Ollama embeddings.
+- Weaviate vector storage and retrieval.
+- Qwen answer generation.
+- Source citations.
+- Insufficient-evidence behavior.
+
+**Acceptance criteria**
+
+- Synthetic or explicitly authorized records are indexed.
+- A question retrieves relevant chunks from Weaviate.
+- The answer includes valid source citations.
+- Unsupported questions return insufficient evidence.
+- Sanitized request/response evidence is stored under `evidence/logs/`.
+
+**Current status:** Code and automated tests are implemented; sanitized live evidence still needs to be captured.
+
+### Stage 4: Observability Evidence Gate
+
+**Objective:** Prove that the request path is observable.
+
+**Scope**
+
+- Gateway spans.
+- Agent-service spans.
+- Phoenix dashboard.
+- Sanitized evidence artifact.
+
+**Acceptance criteria**
+
+- Phoenix is reachable at `http://localhost:6006`.
+- A request produces visible spans for gateway and agent service.
+- Trace evidence is saved under `evidence/traces/`.
+- Trace evidence does not contain OAuth tokens or personal email body text.
+
+**Current status:** Instrumented; trace evidence still required.
+
+### Stage 5: Future Human-Approved Writes
+
+**Objective:** Introduce Gmail modification only after a separate security review.
 
 **Prerequisites**
-- A separately reviewed Gmail write scope with the minimum required permissions.
-- Server-side authorization independent of model or agent recommendations.
-- Explicit human approval before applicable destructive actions.
+
+- Separately approved minimum write scope.
+- Persistent approval records bound to message ID and action.
 - Fresh policy evaluation immediately before execution.
-- Protected-email enforcement for sent, draft, work-related, and personally protected messages.
-- Audit records for approval decisions and executed actions.
-- Adversarial, regression, and integration tests.
-- A documented emergency disable mechanism.
+- Audit records for every attempted action.
+- Emergency write-disable mechanism.
+- Protected-message and adversarial tests.
+- Rollback and user-notification playbook.
 
-**Acceptance criteria**
-- All mandatory security tests pass.
-- Unapproved and protected actions are rejected.
-- Approval cannot be reused for a different message or action.
-- Failure of the authorization or policy service results in no action.
-- Test evidence demonstrates that the emergency disable mechanism works.
-
-**Current status:** Not implemented. Gmail write operations must remain disabled.
-
-### Stage 4: Limited Cohort
-
-**Objective:** Gradually introduce an approved write-enabled workflow to a limited, authorized user group after Stage 3 passes.
-
-**Monitoring**
-- Request error rate.
-- Gateway and agent-service latency.
-- Gmail API failures and quota errors.
-- Policy rejections and uncertain classifications.
-- Approval and execution outcomes.
-- Trace-export failures.
-- User-reported mistakes and incidents.
-
-**Initial operational gates**
-
-The following are proposed starting thresholds, not measured production baselines:
-
-| Metric | Proposed gate |
-|---|---|
-| Unauthorized Gmail actions | Zero tolerated |
-| Protected-email policy violations | Zero tolerated |
-| Failed mandatory security tests | Zero |
-| Unexpected destructive actions | Zero tolerated |
-| API request error rate | Investigate sustained rates above 5% over a 5-minute window |
-| Gateway/agent request latency | Investigate sustained p95 latency above 3 seconds over a 5-minute window |
-| Trace-export failures | Investigate sustained failures; alerting requires implementation |
-
-Tune performance thresholds after collecting a representative baseline. Any confirmed unauthorized action triggers immediate disablement of writes and incident review.
-
-**Current status:** Not started.
-
----
+**Current status:** Not implemented. Do not enable write scopes or actions.
 
 ## 2. Rollback Triggers
 
-Initiate rollback or disable the affected capability when any of the following occurs:
+Rollback or disable the affected capability when any of the following occurs:
 
-1. A confirmed unauthorized Gmail action.
-2. A protected message is modified unexpectedly.
-3. An approval is bypassed, reused improperly, or cannot be verified.
-4. A policy or authorization failure permits an unsafe action.
-5. OAuth credentials or tokens are suspected to be exposed.
-6. A deployed version causes a critical regression.
-7. The application repeatedly produces unsafe or unverifiable decisions.
-8. Required audit records cannot be generated or preserved.
-
-For a confirmed unauthorized action, disable writes immediately. Preserve relevant evidence and investigate before re-enabling the capability.
-
----
+1. Unauthorized Gmail action or suspected write route exposure.
+2. OAuth credential or token exposure.
+3. Protected-message policy regression.
+4. RAG answer without valid evidence citation.
+5. Trace/log artifact containing secrets or unnecessary personal content.
+6. Critical dependency, container, or CI failure.
+7. Weaviate, Ollama, gateway, or agent service instability that affects evidence quality.
 
 ## 3. Rollback Procedure
 
-1. **Disable writes:** activate the emergency write-disable mechanism and prevent further Gmail modifications.
-2. **Contain credentials:** revoke or reduce OAuth permissions when warranted. Rotate compromised credentials where appropriate.
-3. **Restore the last known-good release:** roll back the application image and configuration to a verified version.
-4. **Preserve evidence:** retain sanitized application logs, audit records, timestamps, request identifiers, and relevant trace data.
-5. **Inspect Gmail state:** identify affected messages and determine which actions actually occurred.
-6. **Reconcile changes:** restore or correct message state where possible and authorized. Do not assume that every Gmail change can be reversed.
-7. **Investigate root cause:** review policy behavior, authorization, approval records, dependency changes, and deployment configuration.
-8. **Verify recovery:** run regression, policy, integration, and applicable security tests.
-9. **Re-enable cautiously:** require security review and documented approval before restoring write capability.
+1. Stop the Compose stack:
 
-The emergency disable mechanism and the complete write rollback workflow must be implemented and tested before Stage 3 is approved.
+```powershell
+docker compose down
+```
 
----
+2. Preserve sanitized diagnostics:
+
+```powershell
+docker compose logs --tail=200
+```
+
+3. Remove or quarantine unsafe evidence artifacts.
+4. Revoke or rotate OAuth credentials if exposure is suspected.
+5. Return to the last verified commit or image.
+6. Re-run `docker compose config`, `pytest -q -rs`, and readiness checks.
+7. Re-enable only the validated read-only stages.
 
 ## 4. Recovery Limitations
 
-- Rolling back a container image does not undo changes already made in Gmail.
-- Moving messages to Trash is not a guarantee of permanent recovery.
-- OAuth revocation prevents future authorized access but does not reverse completed operations.
-- Logs and traces may not contain enough information to reconstruct every change.
-- Recovery may require manual reconciliation with Gmail state.
-- Restoring the application does not restore an external vector index unless an appropriate backup exists.
+- Rolling back application containers does not delete data already indexed in Weaviate.
+- OAuth revocation prevents future access but does not remove previously captured evidence.
+- If future write actions are ever enabled, application rollback cannot automatically reverse Gmail changes.
+- Trace and log evidence may be incomplete if telemetry export fails.
 
-A production rollout must define recovery-time objectives (RTO), recovery-point objectives (RPO), backup policies, and retention requirements.
-
----
-
-## 5. Operational Verification
-
-### Service status
+## 5. Operational Verification Commands
 
 ```powershell
+docker compose config
+docker compose up --build -d
 docker compose ps
-```
-
-### API readiness
-
-```powershell
 Invoke-RestMethod http://localhost:8000/ready
-```
-
-### Test suite
-
-```powershell
 pytest -q -rs
 ```
-
-The current recorded result is **12 passed, 3 skipped**. The end-to-end cleanup workflow, RAG integration, and protected-email-action tests remain skipped; these are not passing acceptance evidence.
-
-### Evidence locations
-
-- Test results: `../evidence/logs/pytest-results.txt`
-- UI screenshot: `../evidence/screenshots/gmail-cleanup-planner.png`
-- Sanitized service logs: `../evidence/logs/`
-- Verified traces: `../evidence/traces/`
-
-Only add trace evidence after end-to-end trace propagation has been demonstrated.
-
----
 
 ## 6. Rollout Decision Record
 
 | Stage | Status | Decision |
 |---|---|---|
-| Stage 1: Local mock mode | Partially verified | Address skipped tests and confirm mock-mode configuration |
-| Stage 2: Read-only Gmail pilot | Demonstrated | Continue read-only validation; RAG remains incomplete |
-| Stage 3: Human-approved writes | Not implemented | Do not enable write scopes or actions |
-| Stage 4: Limited cohort | Not started | Block until Stage 3 security gates pass |
+| Local synthetic validation | Implemented | Keep as baseline gate |
+| Read-only Gmail metadata pilot | Implemented | Refresh sanitized evidence |
+| Local RAG validation | Implemented in code | Capture live sanitized evidence |
+| Observability evidence gate | Instrumented | Capture Phoenix trace evidence |
+| Human-approved writes | Not implemented | Blocked until separate review |
 
-**Final decision:** Continue operating the current prototype in read-only mode. Do not enable Gmail write operations until the approval workflow, server-side authorization, audit trail, rollback controls, and mandatory security tests are implemented and verified.
+**Final decision:** proceed only with read-only capstone validation. Gmail write functionality remains outside the current release.

@@ -15,6 +15,7 @@ htmlcov/
 token.json
 credentials.json
 secrets/
+data/gmail/
 .population-backup-*/
 evidence/logs/*
 !evidence/logs/.gitkeep

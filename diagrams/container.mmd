@@ -1,10 +1,17 @@
-﻿flowchart TB
-    User["User"] --> UI["React Frontend"]
-    UI --> API["FastAPI Gateway"]
-    API --> Agent["Agent Service"]
-    Agent --> Policy["Guardrail Policy Engine"]
-    Agent --> RAG["RAG Service"]
-    RAG --> WV["Weaviate"]
-    Agent --> Gmail["Gmail adapter (read-only initially)"]
-    API -. traces .-> Phoenix["Arize Phoenix"]
-    Agent -. traces .-> Phoenix
+flowchart TB
+    User["Mailbox owner / reviewer"] --> UI["React frontend + Nginx"]
+    UI --> API["FastAPI API gateway"]
+
+    API --> Agent["Agent service"]
+    API --> Gmail["Gmail API read-only"]
+
+    Agent --> Guardrails["Guardrail policy engine"]
+    Agent --> Rag["RAG service modules"]
+    Rag --> Weaviate["Weaviate vector database"]
+    Rag --> Ollama["Local Ollama models"]
+
+    API -. OpenTelemetry .-> Phoenix["Arize Phoenix"]
+    Agent -. OpenTelemetry .-> Phoenix
+
+    CI["GitHub Actions CI"] -. validates .-> API
+    CI -. validates .-> UI

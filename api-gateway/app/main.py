@@ -5,6 +5,7 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
+from app.assist_workflow import run_assisted_plan
 
 AGENT_SERVICE_URL = os.getenv("AGENT_SERVICE_URL", "http://localhost:8001").rstrip("/")
 APP_ENV = os.getenv("APP_ENV", "development")
@@ -24,13 +25,22 @@ class CleanupRequest(BaseModel):
     max_candidates: int = Field(default=20, ge=1, le=100)
 
 
+class CleanupAssistRequest(BaseModel):
+    request: str = Field(min_length=3, max_length=2000)
+    question: str | None = Field(default=None, min_length=3, max_length=2000)
+    max_candidates: int = Field(default=20, ge=1, le=100)
+    use_gmail_metadata: bool = False
+    index_gmail_for_rag: bool = False
+    gmail_max_results: int = Field(default=1, ge=1, le=3)
+
+
 @app.get("/")
 def root() -> dict[str, str]:
     return {
         "service": "api-gateway",
         "status": "ok",
-        "mode": "scaffold",
-        "warning": "This version uses synthetic email candidates and does not modify Gmail.",
+        "mode": "read-only",
+        "warning": "Cleanup plans are recommendations only; Gmail messages are never modified.",
     }
 
 
@@ -62,6 +72,81 @@ async def create_cleanup_plan(
         ) from exc
 
 
+@app.post("/cleanup/assist")
+async def create_cleanup_assist(
+    body: CleanupAssistRequest,
+    x_request_id: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Run a dry-run cleanup review and RAG lookup in one client request."""
+    request_id = x_request_id or str(uuid.uuid4())
+    gmail_indexing = None
+    if body.index_gmail_for_rag:
+        if not body.use_gmail_metadata:
+            raise HTTPException(
+                status_code=422,
+                detail="Gmail RAG indexing requires use_gmail_metadata=true.",
+            )
+        # This helper is bounded to three Inbox messages and returns counts only.
+        gmail_indexing = index_gmail_inbox(
+            max_results=body.gmail_max_results,
+        )
+
+    candidates = None
+    if body.use_gmail_metadata:
+        # Read only bounded metadata; do not fetch email bodies in the planner.
+        gmail_result = gmail_messages(
+            max_results=body.gmail_max_results,
+            label_ids=["INBOX"],
+        )
+        candidates = []
+        for message in gmail_result["messages"]:
+            labels = set(message.get("label_ids", []))
+            candidates.append({
+                "message_id": message["message_id"],
+                "sender": message.get("sender", ""),
+                "recipient": message.get("recipient", ""),
+                "subject": message.get("subject", ""),
+                "date": message.get("date", ""),
+                "label_ids": list(labels),
+                "category": "uncertain",
+                "is_sent": "SENT" in labels,
+                "is_draft": "DRAFT" in labels,
+                "is_work_related": False,
+                "is_personally_protected": False,
+                "classification_confident": False,
+                "proposed_action": "keep",
+            })
+    try:
+        result = await run_assisted_plan(
+            agent_service_url=AGENT_SERVICE_URL,
+            request_id=request_id,
+            request=body.request,
+            question=body.question or body.request,
+            max_candidates=body.max_candidates,
+            candidates=candidates,
+        )
+        if gmail_indexing is not None:
+            result["gmail_indexing"] = {
+                "status": gmail_indexing.get("status"),
+                "messages_fetched": gmail_indexing.get("messages_fetched", 0),
+                "messages_indexed": gmail_indexing.get(
+                    "messages_sent_for_indexing",
+                    gmail_indexing.get("messages_indexed", 0),
+                ),
+                "chunks_indexed": gmail_indexing.get(
+                    "index_result", {}
+                ).get("chunks_indexed", 0),
+                "skipped_empty": gmail_indexing.get("skipped_empty", 0),
+                "gmail_read_only": gmail_indexing.get("gmail_read_only", True),
+            }
+        return result
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Agent service unavailable or returned an error: {type(exc).__name__}",
+        ) from exc
+
+
 @app.get("/ready")
 async def ready() -> dict[str, str]:
     try:
@@ -78,6 +163,7 @@ async def ready() -> dict[str, str]:
 from app.gmail_oauth import (
     router as gmail_oauth_router,
     gmail_messages,
+    index_gmail_inbox,
 )
 
 app.include_router(gmail_oauth_router)

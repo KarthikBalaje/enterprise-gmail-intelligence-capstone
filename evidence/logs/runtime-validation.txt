@@ -1,17 +1,21 @@
-=== Docker Compose Status ===
-NAME                                                     IMAGE                                                                     COMMAND                  SERVICE         CREATED             STATUS                       PORTS
-enterprise-gmail-intelligence-capstone-agent-service-1   sha256:97247990f99447d064c33d678718f0d72a7167327d2e50d473c4f4cc18d6e638   "uvicorn app.main:apGǪ"   agent-service   About an hour ago   Up About an hour (healthy)   8001/tcp
-enterprise-gmail-intelligence-capstone-api-gateway-1     enterprise-gmail-intelligence-capstone-api-gateway                        "uvicorn app.main:apGǪ"   api-gateway     50 minutes ago      Up 50 minutes (healthy)      127.0.0.1:8000->8000/tcp
-enterprise-gmail-intelligence-capstone-frontend-1        enterprise-gmail-intelligence-capstone-frontend                           "/docker-entrypoint.GǪ"   frontend        About an hour ago   Up About an hour             127.0.0.1:5173->80/tcp
-enterprise-gmail-intelligence-capstone-phoenix-1         arizephoenix/phoenix:latest                                               "/usr/bin/python3.13GǪ"   phoenix         3 hours ago         Up 3 hours                   127.0.0.1:6006->6006/tcp
-enterprise-gmail-intelligence-capstone-weaviate-1        cr.weaviate.io/semitechnologies/weaviate:1.27.6                           "/bin/weaviate --hosGǪ"   weaviate        3 hours ago         Up 3 hours                   127.0.0.1:50051->50051/tcp, 127.0.0.1:8081->8080/tcp
+﻿=== Docker Compose Config ===
+docker compose config completed successfully on 2026-10-12.
 
+=== Docker Compose Status ===
+Services observed running locally:
+- frontend on 127.0.0.1:5173
+- api-gateway on 127.0.0.1:8000, healthy
+- agent-service, healthy on internal port 8001
+- weaviate on 127.0.0.1:8081 and 127.0.0.1:50051
+- phoenix on 127.0.0.1:6006
 
 === API Readiness ===
+Invoke-RestMethod http://localhost:8000/ready
+{"status":"ready"}
 
+=== Frontend Build ===
+npm run build completed successfully.
 
-status : ready
-
-
-
-
+=== Safety Note ===
+No Gmail send, archive, trash, delete, or label-modification action was executed during validation.
+No .env, OAuth token, credential, or personal email body was included in this evidence file.

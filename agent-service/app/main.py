@@ -9,7 +9,7 @@ app = FastAPI(title="Gmail Cleanup Agent Service", version="0.1.0")
 
 from app.telemetry import configure_tracing
 
-configure_tracing(app, "agent-service")
+configure_tracing(app, "agent-service", instrument_httpx=True)
 
 
 from typing import Any
