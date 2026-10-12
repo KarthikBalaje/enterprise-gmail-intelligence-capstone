@@ -1,0 +1,9 @@
+﻿flowchart TD
+    Request["Cleanup request"] --> Parser["Request validation"]
+    Parser --> Classifier["Email classifier"]
+    Classifier --> Planner["Cleanup planner"]
+    Planner --> Policy["Deterministic policy engine"]
+    Policy -->|Eligible proposal| Approval["HITL approval checkpoint"]
+    Policy -->|Protected or uncertain| Review["Skip / manual review"]
+    Approval --> Executor["Controlled Gmail executor"]
+    Executor --> Audit["Audit record"]
