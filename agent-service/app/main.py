@@ -9,7 +9,42 @@ app = FastAPI(title="Gmail Cleanup Agent Service", version="0.1.0")
 
 from app.telemetry import configure_tracing
 
-configure_tracing(app, "agent-service")
+configure_tracing(app, "agent-service", instrument_httpx=True)
+
+
+from typing import Any
+from fastapi import HTTPException
+from pydantic import BaseModel, Field
+from rag_service.ingestion import prepare_documents
+from rag_service.retrieval import index_email_messages, retrieve_email_context
+from rag_service.answer import build_answer
+
+class RagIndexRequest(BaseModel):
+    messages: list[dict[str, Any]] = Field(min_length=1, max_length=500)
+
+
+class RagAskRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=2000)
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+@app.post("/rag/index")
+def rag_index(body: RagIndexRequest):
+    try:
+        chunks = index_email_messages(body.messages)
+        return {"status": "indexed", "chunks_indexed": chunks}
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/rag/ask")
+def rag_ask(body: RagAskRequest):
+    try:
+        evidence = retrieve_email_context(body.question, body.limit)
+        return build_answer(body.question, evidence)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
 
 
 

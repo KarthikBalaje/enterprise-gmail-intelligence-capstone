@@ -1,5 +1,7 @@
-﻿flowchart LR
-    User["Mailbox owner"] --> App["Gmail Intelligence & Safe Inbox Cleaner"]
-    App --> Gmail["Gmail API"]
-    App --> LLM["Local LLM / model provider"]
-    App --> Telemetry["Phoenix observability"]
+flowchart LR
+    User["Mailbox owner / reviewer"] --> System["Enterprise Gmail Intelligence & Safe Inbox Cleaner"]
+    System --> Gmail["Gmail API read-only"]
+    System --> Weaviate["Local vector database"]
+    System --> Ollama["Local embedding and chat models"]
+    System --> Phoenix["Phoenix telemetry dashboard"]
+    System --> GitHub["GitHub repository and CI"]
