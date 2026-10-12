@@ -159,4 +159,58 @@ def create_gmail_cleanup_plan(
 
 
 
+class RagIndexRequest(BaseModel):
+    messages: list[dict[str, Any]] = Field(min_length=1, max_length=500)
+
+
+class RagAskRequest(BaseModel):
+    question: str = Field(min_length=3, max_length=2000)
+    limit: int = Field(default=5, ge=1, le=20)
+
+
+@app.post("/rag/index")
+async def rag_index(body: RagIndexRequest) -> dict[str, Any]:
+    """Forward explicitly supplied test or approved email records to the agent."""
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{AGENT_SERVICE_URL}/rag/index",
+                json=body.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail="Agent rejected the RAG indexing request",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Agent service unavailable during RAG indexing",
+        ) from exc
+
+
+@app.post("/rag/ask")
+async def rag_ask(body: RagAskRequest) -> dict[str, Any]:
+    """Forward a question to the agent's retrieval and answer pipeline."""
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(
+                f"{AGENT_SERVICE_URL}/rag/ask",
+                json=body.model_dump(),
+            )
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail="Agent rejected the RAG question",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Agent service unavailable during RAG retrieval",
+        ) from exc
+
 

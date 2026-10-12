@@ -11,6 +11,11 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+import base64
+import re
+import httpx
+from html.parser import HTMLParser
+
 router = APIRouter(prefix="/gmail", tags=["Gmail Read-only"])
 
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
@@ -247,4 +252,185 @@ def gmail_messages(
         raise HTTPException(
             status_code=502,
             detail=f"Gmail message listing failed: HTTP {exc.resp.status}",
+        ) from exc
+
+
+
+AGENT_SERVICE_URL = os.getenv(
+    "AGENT_SERVICE_URL",
+    "http://agent-service:8001",
+).rstrip("/")
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Extract readable text from HTML email bodies."""
+
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self.skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style"}:
+            self.skip_depth += 1
+        elif tag == "br" or tag in {"p", "div", "li"}:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"} and self.skip_depth:
+            self.skip_depth -= 1
+        elif tag in {"p", "div", "li"}:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if not self.skip_depth:
+            self.parts.append(data)
+
+    def get_text(self):
+        return re.sub(r"\n{3,}", "\n\n", "".join(self.parts)).strip()
+
+
+def _decode_gmail_body(data: str) -> str:
+    """Decode Gmail's Base64URL-encoded body data."""
+    try:
+        raw = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+        return raw.decode("utf-8", errors="replace")
+    except (ValueError, TypeError):
+        return ""
+
+
+def _extract_email_body(payload: dict) -> str:
+    """Extract text/plain first, falling back to text/html; skip attachments."""
+    plain_parts = []
+    html_parts = []
+
+    def walk(part):
+        mime_type = part.get("mimeType", "").lower()
+        filename = part.get("filename", "")
+        body = part.get("body", {})
+
+        # Never index attachment contents.
+        if filename or body.get("attachmentId"):
+            return
+
+        if mime_type == "text/plain" and body.get("data"):
+            plain_parts.append(_decode_gmail_body(body["data"]))
+        elif mime_type == "text/html" and body.get("data"):
+            html_parts.append(_decode_gmail_body(body["data"]))
+
+        for child in part.get("parts", []):
+            walk(child)
+
+    walk(payload)
+
+    text = "\n".join(part for part in plain_parts if part.strip())
+    if not text:
+        parser = _HTMLTextExtractor()
+        for part in html_parts:
+            parser.feed(part)
+        text = parser.get_text()
+
+    return text[:100_000]
+
+
+@router.post("/rag/index")
+def index_gmail_inbox(
+    max_results: int = Query(default=3, ge=1, le=3),
+):
+    """Index a small batch of Inbox email text for local RAG; never modify Gmail."""
+    credentials = load_credentials()
+    if credentials is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Connect Gmail at /gmail/oauth/start first.",
+        )
+
+    try:
+        service = build(
+            "gmail",
+            "v1",
+            credentials=credentials,
+            cache_discovery=False,
+        )
+
+        listing = service.users().messages().list(
+            userId="me",
+            labelIds=["INBOX"],
+            maxResults=max_results,
+        ).execute()
+
+        messages = []
+        skipped_empty = 0
+
+        for ref in listing.get("messages", []):
+            item = service.users().messages().get(
+                userId="me",
+                id=ref["id"],
+                format="full",
+            ).execute()
+
+            payload = item.get("payload", {})
+            headers = {
+                h["name"].lower(): h["value"]
+                for h in payload.get("headers", [])
+            }
+            body = _extract_email_body(payload)
+
+            if not body.strip():
+                skipped_empty += 1
+                continue
+
+            messages.append({
+                "id": item["id"],
+                "threadId": item.get("threadId", ""),
+                "subject": headers.get("subject", "")[:500],
+                "sender": headers.get("from", "")[:500],
+                "date": headers.get("date", "")[:100],
+                "labels": item.get("labelIds", []),
+                "body": body,
+            })
+
+        if not messages:
+            return {
+                "status": "no_indexable_messages",
+                "messages_fetched": len(listing.get("messages", [])),
+                "messages_indexed": 0,
+                "skipped_empty": skipped_empty,
+                "gmail_read_only": True,
+            }
+
+        with httpx.Client(timeout=180.0) as client:
+            response = client.post(
+                f"{AGENT_SERVICE_URL}/rag/index",
+                json={"messages": messages},
+            )
+            response.raise_for_status()
+            result = response.json()
+
+        # Return counts and status, not email body contents.
+        return {
+            "status": result.get("status", "completed"),
+            "messages_fetched": len(listing.get("messages", [])),
+            "messages_sent_for_indexing": len(messages),
+            "skipped_empty": skipped_empty,
+            "index_result": result,
+            "gmail_read_only": True,
+            "attachments_indexed": False,
+            "message_bodies_returned": False,
+        }
+
+    except HttpError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Gmail body retrieval failed: HTTP {exc.resp.status}",
+        ) from exc
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"RAG indexer rejected the batch: HTTP {exc.response.status_code}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"RAG indexer unavailable: {type(exc).__name__}",
         ) from exc
